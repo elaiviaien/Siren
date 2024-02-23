@@ -1,101 +1,57 @@
 from pyrogram import Client, filters
-import keyboard
-from pygame import mixer  # Load the popular external library
+from pygame import mixer
 import os
+import keyboard
 import asyncio
 
-app = Client("my_account", api_id=10736822, api_hash="3a730347f1f410c6d8491fbfaed0add9", config_file="")
-filenames = os.listdir()  # [] if no fi
-
-
-def check(input_t, error_t):
-    t = input(input_t)
-
-    if "+" in t or "-" in t:
-        print("checked_2")
-
-        return t
-    else:
-        print(error_t)
-        check(input_t, error_t)
-
-
-def check_s_s(input_t, error_t):
-    t = input(input_t)
-
-    if t in filenames:
-        print("checked")
-        return t
-    else:
-        print(error_t)
-        check_s_s(input_t, error_t)
-
-plays = True
-busy = True
+app = Client("my_account", api_id=None, api_hash=None, config_file="")
+filenames = os.listdir()
 mixer.init()
-tel_channel = input("Введите название канала для отслеживания сирены (Например 'sirena_dp' //без '@' ): ")
-call_text = input(
-    "Введите часть текста сообщения канала при котором должна срабатывать сирена (внимание, текст чувствительный к "
-    "символам, поэтому рекомндуеться просто скопировать из телеграмм канала уникальную часть сообщения о тревоге): ")
 
-siren_music = check_s_s("Введите название файла для сирены (файл должен лежать в папке файла siren_main.exe  ): ",
-                        "Такого файла нет в папке, проверьте корректность написания имени файла")
 
-good_play = check("Проигрывать спец. звук при окончании сирены? (+ означает ДА, - означает НЕТ)",
-                  "Введён не тот символ. Введите '+' или '-'")
+def get_input(prompt, error_message, condition):
+    while True:
+        value = input(prompt)
+        if condition(value):
+            return value
+        print(error_message)
+
+
+tel_channel = input("Введіть назву каналу для відстеження сирени (наприклад, 'sirena_dp' без '@'): ")
+call_text = input("Введіть частину повідомлення каналу, коли має спрацювати сирена: ")
+
+siren_music = get_input("Введіть назву файлу сирени (файл повинен бути у папці файлу siren_main.exe): ",
+                        "Цього файлу немає в папці, перевірте правильність написання назви файлу",
+                        lambda t: t in filenames)
+
+good_play = get_input("Відтворити спеціальний звук в кінці сирени? ('+' означає ТАК, '-' означає НІ)",
+                      "Введено неправильний символ. Введіть '+' або '-'",
+                      lambda t: "+" in t or "-" in t)
+
 if "+" in good_play:
-    good_call_text = input(
-        "Введите часть текста сообщения канала при котором должна срабатывать музыка отбоя сирены (внимание, "
-        "текст чувствительный к символам, поэтому рекомндуеться просто скопировать из телеграмм канала уникальную "
-        "часть "
-        "сообщения о отбое тривоги): ")
-    good_siren_music = check_s_s("Введите название файла для сирены (файл должен лежать в папке файла siren_main.exe  "
-                                 "): ", "Такого файла нет в папке, проверьте корректность написания имени файла")
-print("Отслеживание канала...")
+    good_call_text = input("Введіть частину повідомлення каналу, коли має спрацювати музика скасування сирени: ")
+    good_siren_music = get_input("Введіть назву файлу сирени (файл повинен бути у папці файлу siren_main.exe): ",
+                                 "Цього файлу немає в папці, перевірте правильність написання назви файлу",
+                                 lambda t: t in filenames)
 
-@app.on_message(filters.channel and filters.create(lambda self, c, m: (m.chat.username == tel_channel)))
+print("Відстеження каналу...")
+
+
+@app.on_message(filters.channel & filters.create(lambda _, __, m: m.chat.username == tel_channel))
 async def call(client, message):
-    global plays, busy
-    plays = True
-    busy = True
-    print("Пришло сообщение")
     m = await app.get_history(tel_channel, limit=1)
-    if call_text in m[0].text:
-        mixer.music.load(siren_music)
+    text = m[0].text
+    music_file = siren_music if call_text in text else good_siren_music if "+" in good_play and good_call_text in text else None
+    if music_file is not None:
+        mixer.music.load(music_file)
         await asyncio.sleep(0.1)
-        while plays:
+        while mixer.music.get_busy() or keyboard.is_pressed('enter'):
             mixer.music.play()
-            print("В укрытие!!!")
-            print("Что б остановить нажмите Enter")
-            busy = mixer.music.get_busy()
-            while busy:  # wait for music to finish playing
-                await asyncio.sleep(0.1)
-                busy = mixer.music.get_busy()
-                if keyboard.is_pressed('enter'):
-                    print("Остановлено")
-                    plays = False
-                    busy = False
-                    mixer.music.stop()
-                    break
-    if "+" in good_play:
-        if good_call_text in m[0].text:
-            mixer.music.load(good_siren_music)
+            print("В укриття!!!" if call_text in text else "Скасування тривоги")
+            print("Натисніть Enter, щоб зупинити")
             await asyncio.sleep(0.1)
-            while plays:
-                mixer.music.play()
-                print("Отмена тривоги")
-                print("Что б остановить нажмите Enter")
-                busy = mixer.music.get_busy()
-                while busy:
-                    await asyncio.sleep(0.1)
-                    busy = mixer.music.get_busy()
-                    if keyboard.is_pressed('enter'):
-                        print("Остановлено")
-                        print("Отслеживание канала продолжено...")
-                        plays = False
-                        busy = False
-                        mixer.music.stop()
-                        break
+        print("Зупинено")
+        mixer.music.stop()
 
 
 app.run()
